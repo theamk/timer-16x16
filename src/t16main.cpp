@@ -22,89 +22,6 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include <display_driver.h>
 
 /*
-Hardware:
-   4x 8x8 dot displays, based on MAX7219 chipset
-   1x 4-digit LED indicator, driven by TM1637
-
-Pinout:
-  (left side)
-  GP0
-  GP1
-
-  GP2
-  GP3
-  GP4
-  GP5
-
-  GP6
-  GP7
-  GP8  IO - IMU SDA  (w/4.7K pull-up)
-  GP9  IO - IMU SCL  (w/4.7K pull-up)
-
-  GP10  I - encoder A (w/4.7K pull-up)
-  GP11  I - encoder B (w/4.7K pull-up)
-  GP12  I - button green (w/4.7K pull-up)
-  GP13  I - button blue (w/4.7K pull-up)
-
-  GP14  O - LED green (270 ohm to GND, active high)
-  GP15  O - LED blue (270 ohm to GND, active high)
-
-  (right side)
-  GP16  I - SPI RX (unused)
-  GP17  O - SPI CSn to MAX7219 8x8 displays
-
-  GP18  O - SPI SCK to MAX7219 8x8 displays
-  GP19  O - SPI TX to MAX7219 8x8 displays
-  GP20  O - DATA to TM1637
-  GP21  O - CLK to TM1637
-
-  GP22  O - (planned) soft power off
-  GP23  I - on-board voltage regulator mode selector
-  GP24  I - on-board USB voltage sensor
-  GP25  O - on-board LED
-
-  GP26
-  GP27
-  GP28
-
-Power connections:
-  USB is exposed outside the box
-  VBUS goes to charger in
-         (so USB input can be used to charge battery)
-  VSYS is connected to switch output via diode
-  3V3_EN is connnected to switch output via resistor
-         (low=shutdown, so when device is off but USB is supplying power. pico is off)
-
- PICO:VBUS               GND
-   |                      |
-[ VIN+                   VIN- ]
-[                             ]
-[ charger / protection board  ]
-[ (upside-down to expose LED) ]
-[ (modded to 500mA Icharge)   ]
-[                             ]
-[  OUT+ BATT+    BATT-  OUT-  ]
-    |    |         |     |
-    |    \- 14300 -/    GND
-    |
-    |              /-PICO:GP22
-  /---\   /-GND-\  |  x   x
-  |   |   |     |  |  |   |
-[ IN+ IN+ GND GND ON OFF CTRL ]
-[                             ]
-[  POLOLU mini pushshbutton   ]
-[   power switch (LV 2808)    ]
-[                             ]
-[ OUT OUT GND GND  SW-A  SW-B ]
-   |   |  |     |    |     |
-   \-|-/  \-GND-/    \-BTN-/    <- power button (outside)
-     |
-     +--[R:10K]--PICO:3V3_EN   (switch works even for USB input)
-     +--[R:10K]--GND        
-     +--Vcc of LED displays
-     |
-     \--|>|--PICO:VSYS
-
    
 Future hardware:
    rotary encoder
@@ -163,7 +80,7 @@ void set_spiral_pixels(int count) {
   int x=0, y=0; 
   int dx=0, dy=-1;
   while (count > 0) {    
-    setpixel(x + 7, y + 7, true);
+    setpixel(-x + 8, y + 7, true);
     if ((x == y) || (x < 0 && x == -y) || (x > 0 && x == 1 - y)) {
       int temp = dx;
       dx = -dy;
@@ -219,19 +136,21 @@ void loop() {
   bool green_down = !digitalRead(PIN_BTN_GREEN);
   bool blue_down = !digitalRead(PIN_BTN_BLUE);
 
+  bool refresh = false;
+
   if (green_down) {
     if (mode != M_TICK) {
       next_tick = millis();
     }
     mode = M_TICK;
+    refresh = true;
   } else if (blue_down) {
     mode = M_SET_TIME;
+    refresh = true;
   }
     
   digitalWrite(PIN_LED_GREEN, (mode == M_TICK));
   digitalWrite(PIN_LED_BLUE, (mode == M_SET_TIME));
-
-  bool refresh = false;
 
   // input handling
   switch (mode) {
@@ -261,11 +180,37 @@ void loop() {
   if (refresh) {
     set_spiral_pixels(time_left);
     
-    char buff[20];
-    sprintf(buff, "%02d%02d", (time_left / 60), (time_left % 60));
+    char buff[20] = {};
+    if (time_left >= 0) {
+      sprintf(buff, "%02d%02d", (time_left / 60), (time_left % 60));
+    } else {
+      sprintf(buff, "-%d%02d", (-time_left / 60), (-time_left % 60));
+    }
+
+    // Re-enable pins if they were disabled before (see below)
+    pinMode(CLOCK_DIO, OUTPUT);    
+    pinMode(CLOCK_CLK, OUTPUT);
+    delay(1); 
+    
     clock_disp.setBrightness(7); // 0..7
-    clock_disp.switchColon()->refresh();
+    if ((time_left & 1) || (mode != M_TICK)) {
+      clock_disp.colonOn();
+      // Force change invisible character because there is a bug: display won't refresh if
+      // only colon changes but string stays the same.
+      buff[4] = '.';
+    } else {
+      clock_disp.colonOff();
+      buff[4] = ' ';
+    }
+    buff[5] = 0;
     clock_disp.display(String(buff));
+
+    // We want to tri-state control pins between runs, to enable soft shut-off
+    // the TM1637 library we have uses "mI2C.h" driver, which uses regular digitalWrite
+    // calls. So we can just tri-state the pins.
+    pinMode(CLOCK_CLK, INPUT_PULLUP);
+    pinMode(CLOCK_DIO, INPUT);
+
   }
   
 

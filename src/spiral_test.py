@@ -11,7 +11,7 @@ dx = 0
 dy = -1
 for i in range(256):
     try:
-        AREA[y+7][x+7] = i
+        AREA[y+7][-x+7] = i
     except IndexError:
         pass
     if (x == y) or (x < 0 and x == -y) or (x > 0 and x == 1 - y):
