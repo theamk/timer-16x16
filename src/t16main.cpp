@@ -13,7 +13,13 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 */
 #include <Arduino.h>
 
-#include <SPI.h>
+#include <stdlib.h>
+//#include <pico/rand.h>
+#include <include/lwipstack/lwipopts.h>
+
+#include "TM1637.h"
+
+#include <display_driver.h>
 
 /*
 Hardware:
@@ -25,87 +31,103 @@ Future hardware:
    accelerometer
 */
 
-SPISettings display_settings(100000, MSBFIRST, SPI_MODE0);
-#define SPI1_MISO 16  // not used
-#define SPI1_MOSI 19
-#define SPI1_SCLK 18
-#define SPI1_CS_DISP 17
-//arduino::MbedSPI SPI1(SPI1_MISO, SPI1_MOSI, SPI1_SCLK);
+void set_random_pixels(int count);
 
-void display_send_raw(uint8_t cmd, uint8_t data[4]) {
-  digitalWrite(SPI1_CS_DISP, 0);
-  SPI.beginTransaction(display_settings);
-  delay(1);
-  SPI.transfer(cmd); SPI.transfer(data[0]);
-  SPI.transfer(cmd); SPI.transfer(data[1]);
-  SPI.transfer(cmd); SPI.transfer(data[2]);
-  SPI.transfer(cmd); SPI.transfer(data[3]);
-  delay(1);
-  SPI.endTransaction();
-  digitalWrite(SPI1_CS_DISP, 1);
-}
-
-void display_send_raw_all(uint16_t cmddata) {
-  uint8_t d = cmddata & 0xFF;
-  uint8_t data[4] = {d, d, d, d};    
-  display_send_raw(cmddata >> 8, data);
-}
-
-
-uint8_t framebuffer[32] = {0};
-
-void display_update() {
-  display_send_raw_all(0x0900); // no decode, confirms default
-  display_send_raw_all(0x0A05); // intensity in last digit, 0..0xF
-  display_send_raw_all(0x0B07); // display full 8x8, confirms default
-  display_send_raw_all(0x0F00); // display test off, confrims default
-  for (int i=0; i<8; i++) {
-    display_send_raw(0x01 + i, &framebuffer[i*4]);
-  }
-  display_send_raw_all(0x0C01); // take displays out of shutdown
-}
-
-void setpixel(int x, int y, bool on) {
-  if (x < 0 || x > 15) return;
-  if (y < 0 || y > 15) return;
-  // The formulas below depend on how the modules were assembled
-  int module_idx = ((y >= 8) ? 0 : 1) + ((x >= 8) ? 2 : 0);
-  int module_bit = (y & 7);
-  int offset = ((x & 7) ^ 7) * 4 + module_idx;
-  if (on) {
-    framebuffer[offset] |= (1 << module_bit);
-  } else {
-    framebuffer[offset] &= ~(1 << module_bit);
-  }  
-}
+#define CLOCK_CLK    21
+#define CLOCK_DIO    20
+TM1637 clock_disp(CLOCK_CLK, CLOCK_DIO);
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(SPI1_CS_DISP, OUTPUT);
-  digitalWrite(SPI1_CS_DISP, 1);
 
-  SPI.begin();
-  display_update();
+  clock_disp.begin();
+  clock_disp.clearScreen();
+    
+  display_init();
+
+  srand(lwip_get_random());
+
+  set_random_pixels(60);
 }
 
-int step = 0;
+void set_random_pixels(int count) {
+  if (count > 255) { count = 255; };
+  display_set_all(false);
+  while (count > 0) {
+    int x = random() % DISP_WIDTH;
+    int y = random() % DISP_HEIGHT;
+    if (!setpixel(x, y, true)) { count--; };
+  }
+  
+  display_update();  
+}
 
-int x = 0;
-int y = 0;
-bool mode = true;
-
+/*
+// display demo
 void loop() {  
   delay(50);
   digitalWrite(LED_BUILTIN, (step & 15) > 3);
+  static int step = 0, x = 0, y = 0;
   step++;
-  
+
   setpixel(y, x, mode);
   x+=1;
-  if (x > 15) {
+  if (x >= DISP_WIDTH) {
     x=0; y++;
-    if (y > 15) {
+    if (y >= DISP_HEIGHT) {
       y = 0; mode = !mode;
     }
   }
   display_update();
+}
+*/
+
+int step = 0;
+unsigned long next_update = 0;
+
+
+void loop() {
+  // update exactly 4 times per second
+  if (millis() < next_update) { return; }
+  next_update += 250;
+  
+  digitalWrite(LED_BUILTIN, (step & 15) > 3);
+  step++;
+
+  int time = display_count_on();
+  char buff[20];
+  sprintf(buff, "%02d%02d", (time / 60), (time % 60));
+  clock_disp.setBrightness(7); // 0..7
+  clock_disp.switchColon()->refresh();
+  clock_disp.display(String(buff));
+  
+  if (display_count_on() == 0) {
+    delay(200);
+    for (int i=0; i<4; i++) {
+      display_set_all(i & 1);
+      display_update();
+      delay(100);
+    }
+    set_random_pixels(120);
+  }
+
+  if ((step % 4) == 0) {
+    int x, y;
+    // pick random dot until we find active one.
+    // TODO make more efficient
+    while (1) {
+      x = random() % DISP_WIDTH;
+      y = random() % DISP_HEIGHT;
+      if (setpixel(x, y, false)) break;
+    }
+    display_update();
+    // blink it
+    for (int i=0; i<4; i++) {
+      delay(50);
+      setpixel(x, y, (i & 1) == 0);
+      display_update();
+    }
+  }
+
+  
 }
