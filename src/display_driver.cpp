@@ -38,6 +38,12 @@ void display_update() {
   SPI.begin();
   delay(1);
 
+  // docs:
+  // https://www.analog.com/media/en/technical-documentation/data-sheets/MAX7219-MAX7221.pdf
+  
+  // lines were tri-stated, so send some no-ops to avoid glitches
+  display_send_raw_all(0);
+    
   // Start by setting framebuffer to the right value
   for (int i=0; i<8; i++) {
     display_send_raw(0x01 + i, &framebuffer[i*4]);
@@ -48,6 +54,9 @@ void display_update() {
   display_send_raw_all(0x0F00); // display test off, confirms default
   display_send_raw_all(0x0C01); // take displays out of shutdown
 
+  // Another no-op for the road, in case tri-stated lines get loaded somehow.
+  display_send_raw_all(0);
+    
   // Now that we are done, turn things off again
   SPI.end();
   pinMode(SPI1_CS_DISP, INPUT_PULLUP);  

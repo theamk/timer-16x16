@@ -22,7 +22,7 @@ Pinout:
   GP4
   GP5
 
-  GP6
+  GP6   O - speaker (via 2N2222 transistor)
   GP7
   GP8  IO - PLANNED: IMU SDA  (w/2.2K pull-up)
   GP9  IO - IMU SCL  (w/2.2K pull-up)
@@ -44,7 +44,7 @@ Pinout:
   GP20  O - DATA to TM1637
   GP21  O - CLK to TM1637
 
-  GP22  O - (planned) soft power off
+  GP22  O - set high to force power off
   GP23  I - on-board voltage regulator mode selector
   GP24  I - on-board USB voltage sensor
   GP25  O - on-board LED
