@@ -25,7 +25,6 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 /*
    
 Future hardware:
-   rotary encoder
    accelerometer
 */
 
@@ -140,7 +139,7 @@ int time_left = 0;
 // millis() timestamp when this changes
 unsigned long next_tick = 0;
 // how many seconds does each pixel represent
-int pixel_time = 10;
+int pixel_time = 60;
 
 
 unsigned long tone_state = 0;
@@ -249,14 +248,16 @@ void handle_encoder() {
     break;
   default:
     if (timer_mode == T_SET_TIME) {
+      int scroll_step = (time_left >= 600) ? 60 : 
+        (pixel_time >= 60) ? 15 : pixel_time;
       while (delta_encoder < 0) {
         delta_encoder++;
-        time_left = ((time_left - 1) / pixel_time) * pixel_time;
+        time_left = ((time_left - 1) / scroll_step) * scroll_step;
         if (time_left < 0) { time_left = 0; }
       }
       while (delta_encoder > 0) {
         delta_encoder--;
-        time_left = ((time_left / pixel_time) + 1) * pixel_time;
+        time_left = ((time_left / scroll_step) + 1) * scroll_step;
       }
     }
     break;
