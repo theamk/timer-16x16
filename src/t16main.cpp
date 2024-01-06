@@ -139,7 +139,7 @@ int time_left = 0;
 // millis() timestamp when this changes
 unsigned long next_tick = 0;
 // how many seconds does each pixel represent
-int pixel_time = 60;
+int pixel_time = 10;
 
 
 unsigned long tone_state = 0;
@@ -248,8 +248,9 @@ void handle_encoder() {
     break;
   default:
     if (timer_mode == T_SET_TIME) {
-      int scroll_step = (time_left >= 600) ? 60 : 
-        (pixel_time >= 60) ? 15 : pixel_time;
+      // when pixels are small, always do one step == one pixel. But when they are large, provide finer steps.
+      int scroll_step = (pixel_time < 60) ? pixel_time :
+        (time_left >= 600) ? 60 : 15;
       while (delta_encoder < 0) {
         delta_encoder++;
         time_left = ((time_left - 1) / scroll_step) * scroll_step;
