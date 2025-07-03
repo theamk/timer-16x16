@@ -50,10 +50,18 @@ TM1637 clock_disp(CLOCK_CLK, CLOCK_DIO);
 // how long to spend in settings mode with no input before switching off
 #define IDLE_POWER_OFF_INTERVAL  (10 * 60 * 1000)
 
+// How many ms of shaking does each encoder turn add?
+#define SHAKE_MS_PER_ENCODER_TICK    100
+// What's the maximum wind-up?
+#define SHAKE_MS_MAX_VALUE           3000
+// How many MS per shake state (on ouptut)
+#define SHAKE_MS_PER_STATE           50
+
 PioEncoder encoder(PIN_ENCODER_A);  // B must be A + 1
 RP2040_PWM * speaker;
 
 unsigned long power_off_time = 0;
+int shake_amount_ms = 0;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -88,12 +96,26 @@ void set_random_pixels(int count) {
   display_update();  
 }
 
-void set_spiral_pixels(int count) {
+void set_spiral_pixels(int count, int shake=0) {
   display_set_all(false);  
   int x=0, y=0; 
   int dx=0, dy=-1;
+  int shake_x=0, shake_y=0;
+
+  static const int shake_offsets[8][2] = {
+    {-1, 1}, {0, 1}, {1, 1}, {1, 0},  {1, -1}, {0, -1}, {-1, -1}, {-1, 0},  //{-1, 1}
+  };
+  if (shake > 0) {
+    // Since shaking lasts for a short time, we make no attempt to compensate when many LEDs are lit
+    // total number of lit leds might be <count if shake is nonzero
+    int mult  = ((shake - 1)) / 32 + 1;
+    int phase = ((shake - 1)) % 8;
+    shake_x = shake_offsets[phase][0] * mult;
+    shake_y = shake_offsets[phase][1] * mult;
+  }
+  
   while (count > 0) {    
-    setpixel(-x + 8, y + 7, true);
+    setpixel(-x + 8 + shake_x, y + 7 + shake_y, true);
     if ((x == y) || (x < 0 && x == -y) || (x > 0 && x == 1 - y)) {
       int temp = dx;
       dx = -dy;
@@ -129,8 +151,8 @@ enum {
 } timer_mode = T_SET_TIME;
 
 enum {
-  M_TIME,  // default, time is shown
-  M_SET_STEP,
+  M_TIME,     // default, time is shown
+  M_SET_STEP, // set time interval
 } menu_mode = M_TIME;
   
 
@@ -260,6 +282,11 @@ void handle_encoder() {
         delta_encoder--;
         time_left = ((time_left / scroll_step) + 1) * scroll_step;
       }
+    } else {
+      // shake it!
+      shake_amount_ms += SHAKE_MS_PER_ENCODER_TICK * delta_encoder;
+      if (shake_amount_ms > SHAKE_MS_MAX_VALUE) { shake_amount_ms = SHAKE_MS_MAX_VALUE; }
+      if (shake_amount_ms < -SHAKE_MS_MAX_VALUE) { shake_amount_ms = -SHAKE_MS_MAX_VALUE; }
     }
     break;
   }
@@ -313,11 +340,14 @@ void maybe_refresh_256px_display() {
       pixels--;
     }
   };
-  
-  static int last_pixels = -1;
-  if (pixels != last_pixels) {
-    set_spiral_pixels(pixels);
+
+  int shake_state = abs(shake_amount_ms) / SHAKE_MS_PER_STATE;
+
+  static int last_pixels = -1, last_shake_state = -1;
+  if (pixels != last_pixels || shake_state != last_shake_state) {
+    set_spiral_pixels(pixels, shake_state);
     last_pixels = pixels;
+    last_shake_state = shake_state;
   };
 }
 
@@ -377,6 +407,15 @@ void loop() {
 
   update_leds();
   maybe_update_speaker();
+
+  unsigned long now = millis();
+  static unsigned long prev_now;    
+  if (shake_amount_ms > 0) {
+    shake_amount_ms = max(0, shake_amount_ms - (int)(now - prev_now));
+  } else if (shake_amount_ms < 0) {
+    shake_amount_ms = min(0, shake_amount_ms + (int)(now - prev_now));
+  }
+  prev_now = now;
   
   // tick handling
   switch (timer_mode) {

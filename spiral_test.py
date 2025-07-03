@@ -13,7 +13,7 @@ for i in range(256):
     try:
         AREA[y+7][-x+7] = i
     except IndexError:
-        pass
+        print(f'OOB write x={x} y={y}')
     if (x == y) or (x < 0 and x == -y) or (x > 0 and x == 1 - y):
         dx, dy = -dy, dx
     x += dx
