@@ -20,10 +20,11 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include <RP2040_PWM.h>
 #include "TM1637.h"
 #include <pio_encoder.h>
-#include <display_driver.h>
+
+#include "display_driver.h"
 
 /*
-   
+
 Future hardware:
    accelerometer
 */
@@ -70,16 +71,16 @@ void setup() {
   pinMode(PIN_LED_BLUE, OUTPUT);
 
   encoder.begin();
-  
-  clock_disp.begin();  
+
+  clock_disp.begin();
   clock_disp.clearScreen();
-    
+
   display_init();
 
   srand(lwip_get_random());
 
   speaker = new RP2040_PWM(PIN_SPEAKER, 1000, 0);
- 
+
   //set_random_pixels(60);
 
 }
@@ -90,15 +91,15 @@ void set_random_pixels(int count) {
   while (count > 0) {
     int x = random() % DISP_WIDTH;
     int y = random() % DISP_HEIGHT;
-    if (!setpixel(x, y, true)) { count--; };
+    if (!display_setpixel(x, y, true)) { count--; };
   }
-  
-  display_update();  
+
+  display_update();
 }
 
 void set_spiral_pixels(int count, int shake=0) {
-  display_set_all(false);  
-  int x=0, y=0; 
+  display_set_all(false);
+  int x=0, y=0;
   int dx=0, dy=-1;
   int shake_x=0, shake_y=0;
 
@@ -113,9 +114,9 @@ void set_spiral_pixels(int count, int shake=0) {
     shake_x = shake_offsets[phase][0] * mult;
     shake_y = shake_offsets[phase][1] * mult;
   }
-  
-  while (count > 0) {    
-    setpixel(-x + 8 + shake_x, y + 7 + shake_y, true);
+
+  while (count > 0) {
+    display_setpixel(-x + 8 + shake_x, y + 7 + shake_y, true);
     if ((x == y) || (x < 0 && x == -y) || (x > 0 && x == 1 - y)) {
       int temp = dx;
       dx = -dy;
@@ -154,7 +155,7 @@ enum {
   M_TIME,     // default, time is shown
   M_SET_STEP, // set time interval
 } menu_mode = M_TIME;
-  
+
 
 // timer value, seconds
 int time_left = 0;
@@ -165,23 +166,23 @@ int pixel_time = 10;
 
 
 unsigned long tone_state = 0;
-void maybe_update_speaker() { 
+void maybe_update_speaker() {
   if (!tone_state) {
     set_speaker_freq(0);
   } else { // play the tone
     unsigned int elapsed = millis() - tone_state;
     static int melody[] = {
-      523, 523, 587, 523, 698, 659, 
+      523, 523, 587, 523, 698, 659,
     };
-    
+
     if ((elapsed % 300) < 50) { set_speaker_freq(0); }
     else {
       unsigned int num = elapsed / 300;
       if (num < (sizeof(melody)/sizeof(melody[0]))) {
-        set_speaker_freq(melody[num]);
+	set_speaker_freq(melody[num]);
       } else {
-        tone_state = 0;
-        set_speaker_freq(0);
+	tone_state = 0;
+	set_speaker_freq(0);
       };
     }
   }
@@ -222,9 +223,9 @@ void handle_buttons() {
       break;
     case T_SET_TIME:
       if (time_left == 0) {
-        timer_mode = T_TICK_UP;
+	timer_mode = T_TICK_UP;
       } else {
-        timer_mode = T_TICK_DOWN;
+	timer_mode = T_TICK_DOWN;
       }
       menu_mode = M_TIME;
       next_tick = millis();
@@ -232,7 +233,7 @@ void handle_buttons() {
     }
   };
   green_was_down = green_down;
-  
+
   static bool blue_was_down = false;
   if (blue_down && !blue_was_down) {
     // blue button controls menu mode
@@ -261,9 +262,9 @@ void handle_encoder() {
   if (delta_encoder == 0) {
     return;
   }
-  power_off_time = 0;  
+  power_off_time = 0;
   tone_state = 0; // any input turns tone off
-    
+
   switch (menu_mode) {
   case M_SET_STEP:
     // TODO
@@ -272,15 +273,15 @@ void handle_encoder() {
     if (timer_mode == T_SET_TIME) {
       // when pixels are small, always do one step == one pixel. But when they are large, provide finer steps.
       int scroll_step = (pixel_time < 60) ? pixel_time :
-        (time_left >= 600) ? 60 : 15;
+	(time_left >= 600) ? 60 : 15;
       while (delta_encoder < 0) {
-        delta_encoder++;
-        time_left = ((time_left - 1) / scroll_step) * scroll_step;
-        if (time_left < 0) { time_left = 0; }
+	delta_encoder++;
+	time_left = ((time_left - 1) / scroll_step) * scroll_step;
+	if (time_left < 0) { time_left = 0; }
       }
       while (delta_encoder > 0) {
-        delta_encoder--;
-        time_left = ((time_left / scroll_step) + 1) * scroll_step;
+	delta_encoder--;
+	time_left = ((time_left / scroll_step) + 1) * scroll_step;
       }
     } else {
       // shake it!
@@ -293,11 +294,11 @@ void handle_encoder() {
 }
 
 
-void update_leds() {   
+void update_leds() {
   unsigned long partial = (millis() + 2000 - next_tick) % 1000;
   switch (timer_mode) {
   case T_TICK_UP:
-  case T_TICK_DOWN: 
+  case T_TICK_DOWN:
     digitalWrite(PIN_LED_GREEN, partial < 100); // blink  once per second
     break;
   case T_EXPIRED:
@@ -320,13 +321,13 @@ void update_maybe_power_off() {
     power_off_time = millis() + IDLE_POWER_OFF_INTERVAL;
   } else if (power_off_time < millis()) {
     // power off time
-    digitalWrite(PIN_POWER_OFF, 1);    
+    digitalWrite(PIN_POWER_OFF, 1);
     // should not reach here, but in case it didn't work for some reason, reset.
     delay(100);
     digitalWrite(PIN_POWER_OFF, 0);
     power_off_time = 0;
   }
-}  
+}
 
 
 void maybe_refresh_256px_display() {
@@ -334,9 +335,9 @@ void maybe_refresh_256px_display() {
 
   if (timer_mode == T_TICK_DOWN && ((time_left % pixel_time) == 1)) {
     // last pixel blinks before disappearing
-    unsigned long partial = 1000 - (millis() + 2000 - next_tick) % 1000;    
+    unsigned long partial = 1000 - (millis() + 2000 - next_tick) % 1000;
     if ((partial > 50 && partial < 100) ||
-        (partial > 150 && partial < 200)) {
+	(partial > 150 && partial < 200)) {
       pixels--;
     }
   };
@@ -351,7 +352,7 @@ void maybe_refresh_256px_display() {
   };
 }
 
-void maybe_refresh_7seg_display() {    
+void maybe_refresh_7seg_display() {
   char buff[20] = {};
   if (time_left < 3600) {
     // less than 1 hour -> show minutes + seconds, 2 digits
@@ -379,12 +380,12 @@ void maybe_refresh_7seg_display() {
     return;
   }
   last_display = String(buff);
-  
+
   // Re-enable pins if they were disabled before (see below)
-  pinMode(CLOCK_DIO, OUTPUT);    
+  pinMode(CLOCK_DIO, OUTPUT);
   pinMode(CLOCK_CLK, OUTPUT);
-  delay(1); 
-    
+  delay(1);
+
   clock_disp.setBrightness(7); // 0..7
   if (colon) {
     clock_disp.colonOn();
@@ -409,14 +410,14 @@ void loop() {
   maybe_update_speaker();
 
   unsigned long now = millis();
-  static unsigned long prev_now;    
+  static unsigned long prev_now;
   if (shake_amount_ms > 0) {
     shake_amount_ms = max(0, shake_amount_ms - (int)(now - prev_now));
   } else if (shake_amount_ms < 0) {
     shake_amount_ms = min(0, shake_amount_ms + (int)(now - prev_now));
   }
   prev_now = now;
-  
+
   // tick handling
   switch (timer_mode) {
   case T_SET_TIME:
@@ -427,20 +428,20 @@ void loop() {
     if (next_tick < millis()) {
       next_tick += 1000;
       if (timer_mode == T_TICK_UP) {
-        time_left++;
+	time_left++;
       } else {
-        time_left--;
-        if (time_left == 0) {
-          timer_mode = T_EXPIRED;
-          tone_state = millis(); // start music playback
-        }
+	time_left--;
+	if (time_left == 0) {
+	  timer_mode = T_EXPIRED;
+	  tone_state = millis(); // start music playback
+	}
       }
     }
     break;
   }
 
   update_maybe_power_off();
-  
+
   maybe_refresh_7seg_display();
   maybe_refresh_256px_display();
-}    
+}

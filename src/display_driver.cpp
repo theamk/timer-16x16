@@ -64,7 +64,7 @@ void display_update() {
   pinMode(SPI1_SCLK, INPUT);  
 }
 
-bool setpixel(int x, int y, bool on) {
+bool display_setpixel(int x, int y, bool on) {
   if (x < 0 || x > 15) return false;
   if (y < 0 || y > 15) return false;
   // The formulas below depend on how the modules were assembled
