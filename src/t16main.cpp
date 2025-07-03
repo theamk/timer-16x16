@@ -116,7 +116,7 @@ void set_spiral_pixels(int count, int shake=0) {
   }
 
   while (count > 0) {
-    display_setpixel(-x + 8 + shake_x, y + 7 + shake_y, true);
+    display_setpixel(x + 7 + shake_x, y + 7 + shake_y, true);
     if ((x == y) || (x < 0 && x == -y) || (x > 0 && x == 1 - y)) {
       int temp = dx;
       dx = -dy;
@@ -152,10 +152,13 @@ enum {
 } timer_mode = T_SET_TIME;
 
 enum {
-  M_TIME,     // default, time is shown
+  M_EXIT,     // default, exit menu
   M_SET_STEP, // set time interval
-} menu_mode = M_TIME;
-
+  // set end tone
+  // set display type (spiral/random/etc...)
+  M_MAX_VALUE = M_SET_STEP,
+} menu_item = M_EXIT;
+bool menu_active = false;
 
 // timer value, seconds
 int time_left = 0;
@@ -197,7 +200,7 @@ void handle_buttons() {
     green_down_since = 0;
   } else if (!green_down_since) {
     green_down_since = millis();
-  } else if (millis() < (green_down_since + 50)) {
+  } else if (millis() > (green_down_since + 50)) {
     green_down = true;
   }
 
@@ -207,40 +210,47 @@ void handle_buttons() {
     blue_down_since = 0;
   } else if (!blue_down_since) {
     blue_down_since = millis();
-  } else if (millis() < (blue_down_since + 50)) {
+  } else if (millis() > (blue_down_since + 50)) {
     blue_down = true;
   }
 
   static bool green_was_down = false;
   if (green_down && !green_was_down) {
     // green button controls timer mode
-    switch(timer_mode) {
-    case T_EXPIRED:
-    case T_TICK_UP:
-    case T_TICK_DOWN: // was ticking -> pause, set time
-      timer_mode = T_SET_TIME;
-      menu_mode = M_TIME;
-      break;
-    case T_SET_TIME:
-      if (time_left == 0) {
-	timer_mode = T_TICK_UP;
-      } else {
-	timer_mode = T_TICK_DOWN;
+    if (menu_active) {
+      // exit menu
+      menu_active = false;
+    } else switch(timer_mode) {
+      case T_EXPIRED:
+      case T_TICK_UP:
+      case T_TICK_DOWN: // was ticking -> pause, set time
+	timer_mode = T_SET_TIME;
+	break;
+      case T_SET_TIME:
+	if (time_left == 0) {
+	  timer_mode = T_TICK_UP;
+	} else {
+	  timer_mode = T_TICK_DOWN;
+	}
+	next_tick = millis();
+	break;
       }
-      menu_mode = M_TIME;
-      next_tick = millis();
-      break;
-    }
   };
   green_was_down = green_down;
 
   static bool blue_was_down = false;
   if (blue_down && !blue_was_down) {
-    // blue button controls menu mode
-    switch (menu_mode) {
-    case M_TIME: menu_mode = M_SET_STEP; break;
-    default:
-      menu_mode = M_TIME;
+    // blue button enters menu, then executes menu item
+    if (!menu_active) {
+      // enter menu
+      menu_active = true;
+    } else switch (menu_item) {
+      case M_EXIT:
+	menu_active = false;
+	break;
+      case M_SET_STEP:
+	// TODO
+	break;
     }
   };
   blue_was_down = blue_down;
@@ -265,31 +275,26 @@ void handle_encoder() {
   power_off_time = 0;
   tone_state = 0; // any input turns tone off
 
-  switch (menu_mode) {
-  case M_SET_STEP:
-    // TODO
-    break;
-  default:
-    if (timer_mode == T_SET_TIME) {
-      // when pixels are small, always do one step == one pixel. But when they are large, provide finer steps.
-      int scroll_step = (pixel_time < 60) ? pixel_time :
-	(time_left >= 600) ? 60 : 15;
-      while (delta_encoder < 0) {
-	delta_encoder++;
-	time_left = ((time_left - 1) / scroll_step) * scroll_step;
-	if (time_left < 0) { time_left = 0; }
-      }
-      while (delta_encoder > 0) {
-	delta_encoder--;
-	time_left = ((time_left / scroll_step) + 1) * scroll_step;
-      }
-    } else {
-      // shake it!
-      shake_amount_ms += SHAKE_MS_PER_ENCODER_TICK * delta_encoder;
-      if (shake_amount_ms > SHAKE_MS_MAX_VALUE) { shake_amount_ms = SHAKE_MS_MAX_VALUE; }
-      if (shake_amount_ms < -SHAKE_MS_MAX_VALUE) { shake_amount_ms = -SHAKE_MS_MAX_VALUE; }
+  if (menu_active) {
+    (int&)menu_item = ((int)menu_item + delta_encoder + M_MAX_VALUE + 1) % (M_MAX_VALUE + 1);
+  } else if (timer_mode == T_SET_TIME) {
+    // when pixels are small, always do one step == one pixel. But when they are large, provide finer steps.
+    int scroll_step = (pixel_time < 60) ? pixel_time :
+      (time_left >= 600) ? 60 : 15;
+    while (delta_encoder < 0) {
+      delta_encoder++;
+      time_left = ((time_left - 1) / scroll_step) * scroll_step;
+      if (time_left < 0) { time_left = 0; }
     }
-    break;
+    while (delta_encoder > 0) {
+      delta_encoder--;
+      time_left = ((time_left / scroll_step) + 1) * scroll_step;
+    }
+  } else {
+    // shake it!
+    shake_amount_ms += SHAKE_MS_PER_ENCODER_TICK * delta_encoder;
+    if (shake_amount_ms > SHAKE_MS_MAX_VALUE) { shake_amount_ms = SHAKE_MS_MAX_VALUE; }
+    if (shake_amount_ms < -SHAKE_MS_MAX_VALUE) { shake_amount_ms = -SHAKE_MS_MAX_VALUE; }
   }
 }
 
@@ -308,7 +313,7 @@ void update_leds() {
     digitalWrite(PIN_LED_GREEN, true);
   }
 
-  digitalWrite(PIN_LED_BLUE, (menu_mode != M_TIME));
+  digitalWrite(PIN_LED_BLUE, menu_active);
 }
 
 
@@ -330,7 +335,50 @@ void update_maybe_power_off() {
 }
 
 
+#include "generated_images.inc"
+
+const int kPixelTimeOptions[] = { 10, 15, 30, 60, 120 };
+#define kPixelTimeOptionCount (sizeof(kPixelTimeOptions)/sizeof(kPixelTimeOptions[0]))
+
 void maybe_refresh_256px_display() {
+  uint16_t* icon = NULL;
+
+  if (menu_active) {
+    switch (menu_item) {
+    case M_EXIT:
+      static_assert(MiscIcons_COUNT > 0);
+      icon = MiscIcons[0];
+      break;
+    case M_SET_STEP:
+      static_assert(StepSet_COUNT == kPixelTimeOptionCount);
+      for (int i=0; i<StepSet_COUNT; i++) {
+	if (kPixelTimeOptions[i] == pixel_time) {
+	  icon = StepSet[i];
+	  break;
+	}
+      }
+      if (!icon) {
+	// error/undefined value -> blink two options to indicate this
+	icon = ((millis() / 100) % 2) ? StepSet[0] : StepSet[StepSet_COUNT-1];
+      }
+      break;
+    }
+  }
+  
+  static uint16_t* last_icon = nullptr;
+  static int last_pixels = -1, last_shake_state = -1;
+
+  if (icon) {
+    if (icon != last_icon) {
+      display_show_icon(icon);
+      display_update();
+      last_icon = icon;
+    }
+    last_pixels = -1;
+    return;
+  }
+  last_icon = nullptr;
+
   int pixels = (time_left + pixel_time - 1) / pixel_time;
 
   if (timer_mode == T_TICK_DOWN && ((time_left % pixel_time) == 1)) {
@@ -344,7 +392,6 @@ void maybe_refresh_256px_display() {
 
   int shake_state = abs(shake_amount_ms) / SHAKE_MS_PER_STATE;
 
-  static int last_pixels = -1, last_shake_state = -1;
   if (pixels != last_pixels || shake_state != last_shake_state) {
     set_spiral_pixels(pixels, shake_state);
     last_pixels = pixels;
